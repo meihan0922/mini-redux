@@ -29,3 +29,111 @@ B -->|（state）| D(React components)
 
 D --> | trigger | A
 ```
+
+- 核心要實現
+
+  - 存儲狀態
+  - 獲取狀態
+  - 更新狀態
+  - 變更訂閱
+
+### 基礎架構
+
+> src/store/index.js
+
+```ts
+// import { createStore } from "redux";
+import { createStore } from "../mini-redux/index.ts";
+
+function countReducer(state = 0, action) {
+  switch (action?.type) {
+    case "ADD":
+      return state + 1;
+    case "MINUS":
+      return state - 1;
+    default:
+      return state;
+  }
+}
+
+const store = createStore(countReducer);
+export default store;
+```
+
+> src/pages/Test.tsx
+
+```tsx
+import React, { useLayoutEffect, useReducer } from "react";
+import store from "../store";
+
+const Test = () => {
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+
+  useLayoutEffect(() => {
+    return store.subscribe(() => {
+      forceUpdate();
+    });
+  }, []);
+
+  return (
+    <div>
+      state: {store.getState()}
+      <button
+        onClick={() => {
+          store.dispatch({ type: "ADD" });
+        }}
+      >
+        change
+      </button>
+    </div>
+  );
+};
+
+export default Test;
+```
+
+> src/mini-redux/index.ts
+
+```ts
+import createStore from "./createStore.ts";
+export { createStore };
+```
+
+> src/mini-redux/createStore.ts
+
+```tsx
+export default function createStore(reducer) {
+  let currentState;
+  let listeners: any[] = [];
+
+  function getState() {
+    return currentState;
+  }
+
+  function dispatch(action) {
+    const newState = reducer(currentState, action);
+    currentState = newState;
+    listeners.forEach((l) => {
+      l();
+    });
+  }
+
+  function subscribe(listener: any) {
+    listeners.push(listener);
+    return () => {
+      const index = listeners.indexOf(listener);
+      listeners.splice(index, 1);
+    };
+  }
+
+  // 初始數據
+  dispatch({ type: "1111" });
+
+  return {
+    getState,
+    dispatch,
+    subscribe,
+  };
+}
+```
+
