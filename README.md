@@ -1,7 +1,8 @@
 - [mini-redux](#mini-redux)
   - [Reducer](#reducer)
     - [基礎架構](#基礎架構)
-    - [applymiddleware 中間件](#applymiddleware-中間件)
+  - [applymiddleware 中間件](#applymiddleware-中間件)
+  - [combineReducers](#combinereducers)
 
 # mini-redux
 
@@ -142,7 +143,7 @@ export default function createStore(reducer) {
 }
 ```
 
-### applymiddleware 中間件
+## applymiddleware 中間件
 
 如果想要處理副作用，要怎麼辦？想和服務端交互、異步處理，有辦法這樣寫嗎？
 
@@ -450,4 +451,46 @@ const thunk =
   (action) => {
     return isPromise(action) ? action.then(dispatch) : next(action);
   };
+```
+
+## combineReducers
+
+多個 reducer 時，可以分開寫再一起做處理
+
+```ts
+const store = createStore(
+  combineReducers({
+    count: countReducer,
+    user: userReducer,
+  }),
+  applyMiddleware(logger2, logger, thunk)
+);
+```
+
+使用時
+
+```ts
+store.getState().count;
+```
+
+```ts
+export default function combineReducers(reducers) {
+  return function (prevState = {}, action) {
+    const nextState = {};
+    let hasChanged = false;
+
+    for (const key in reducers) {
+      const reducer = reducers[key];
+      nextState[key] = reducer(prevState[key], action);
+      hasChanged = hasChanged || nextState[key] !== prevState[key];
+    }
+
+    // 簡單紀錄有沒有改變，返回前值或新值
+    hasChanged =
+      hasChanged ||
+      Object.keys(nextState).length !== Object.keys(prevState).length;
+
+    return hasChanged ? nextState : prevState;
+  };
+}
 ```
