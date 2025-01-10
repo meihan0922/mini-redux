@@ -6,6 +6,7 @@
   - [react-redux](#react-redux)
     - [實現 bindActionCreators](#實現-bindactioncreators)
     - [實現 Provider, connect](#實現-provider-connect)
+    - [hooks - useSelector, useDispatch](#hooks---useselector-usedispatch)
 
 # mini-redux
 
@@ -722,4 +723,52 @@ export default connect(
     }
   }
 );
+```
+
+### hooks - useSelector, useDispatch
+
+```tsx
+export default function ReactReduxHookPage({ value }) {
+  const dispatch = useDispatch();
+  const add = useCallback(() => {
+    dispatch({ type: "ADD" });
+  }, [dispatch]);
+  const count = useSelector(({ count }) => count);
+
+  return (
+    <div>
+      ReactReduxHookPage
+      {count}
+      <button onClick={add}>change</button>
+    </div>
+  );
+}
+```
+
+hooks 一樣的原理，具體實現：
+
+> src/mini-react-redux/index.tsx
+
+```tsx
+export function useSelector(selector) {
+  const store = useContext(Context);
+  const { getState, subscribe } = store;
+  let selectedState = selector(getState());
+
+  const forceUpdate = useForceUpdate();
+
+  useLayoutEffect(() => {
+    const unsubscribe = subscribe(() => forceUpdate());
+    return () => unsubscribe();
+  }, [subscribe, forceUpdate]);
+
+  return selectedState;
+}
+
+export function useDispatch() {
+  const store = useContext(Context);
+  const { dispatch } = store;
+
+  return dispatch;
+}
 ```

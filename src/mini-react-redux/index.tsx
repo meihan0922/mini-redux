@@ -62,3 +62,25 @@ function useForceUpdate() {
 
   return update;
 }
+
+export function useSelector(selector) {
+  const store = useContext(Context);
+  const { getState, subscribe } = store;
+  let selectedState = selector(getState());
+
+  const forceUpdate = useForceUpdate();
+
+  useLayoutEffect(() => {
+    const unsubscribe = subscribe(() => forceUpdate());
+    return () => unsubscribe();
+  }, [subscribe, forceUpdate]);
+
+  return selectedState;
+}
+
+export function useDispatch() {
+  const store = useContext(Context);
+  const { dispatch } = store;
+
+  return dispatch;
+}
