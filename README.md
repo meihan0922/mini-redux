@@ -7,6 +7,7 @@
     - [實現 bindActionCreators](#實現-bindactioncreators)
     - [實現 Provider, connect](#實現-provider-connect)
     - [hooks - useSelector, useDispatch](#hooks---useselector-usedispatch)
+    - [結合 react 18: useSyncExternalStore](#結合-react-18-usesyncexternalstore)
 
 # mini-redux
 
@@ -770,5 +771,69 @@ export function useDispatch() {
   const { dispatch } = store;
 
   return dispatch;
+}
+```
+
+### 結合 react 18: useSyncExternalStore
+
+`useSyncExternalStore` 是用戶可以使用第三方狀態管理庫訂閱 react 更新。在組件頂層調用，就可以從外部 store 讀取值
+
+```tsx
+const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot?)
+```
+
+- 返回值: store 的快照
+- `subscribe`: 訂閱函式，當 store 發生變化，就會調用，更新後重新渲染，會返回清除函式
+- `getSnapshot`: 讀取數據的快照函式，如果 store 未發生改變，重複調用會返回相同值; 如果發生改變，返回值也不同了（`Object.is`）就會重新渲染。
+- getServerSnapshot: 在服務器端渲染時，或是客戶端進行服務器端渲染內容時使用。
+
+> 在 react-redux 中，是使用了套件包`use-sync-external-store`，他是 react 內的替代方案，是為了適配不同的版本。
+
+可以改寫 `useSelector` `connect`
+
+```tsx
+export const connect =
+  (mapStateToProps, mapDispatchToProps) => (WrappedComponent) => (props) => {
+    const context = useContext(Context);
+    const { dispatch, getState, subscribe } = context;
+
+    let dispatchProps: Object = { dispatch };
+    if (typeof mapDispatchToProps === "function") {
+      dispatchProps = mapDispatchToProps(dispatch);
+    } else if (typeof mapDispatchToProps === "object") {
+      dispatchProps = bindActionCreators(mapDispatchToProps, dispatch);
+    }
+
+    let state = useSyncExternalStore(subscribe, getState);
+    if (typeof mapStateToProps === "function") {
+      state = mapStateToProps(state);
+    }
+    // const forceUpdate = useForceUpdate();
+
+    // 因為 useEffect 有延遲，如果更新發生在延遲之前，就會漏掉更新
+    // 像是 mini-antD-form 一樣（可以跳過去看
+    // useLayoutEffect(() => {
+    //   const unsubscribe = subscribe(() => forceUpdate());
+    //   return () => unsubscribe();
+    // }, [subscribe]);
+
+    return <WrappedComponent {...props} {...state} {...dispatchProps} />;
+  };
+
+export function useSelector(selector) {
+  const store = useContext(Context);
+  const { getState, subscribe } = store;
+
+  //   const forceUpdate = useForceUpdate();
+
+  //   useLayoutEffect(() => {
+  //     const unsubscribe = subscribe(() => forceUpdate());
+  //     return () => unsubscribe();
+  //   }, [subscribe, forceUpdate]);
+
+  const state = useSyncExternalStore(subscribe, getState);
+  let selectedState = selector(state);
+
+  return selectedState;
 }
 ```
