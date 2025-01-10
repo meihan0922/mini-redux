@@ -3,6 +3,9 @@
     - [基礎架構](#基礎架構)
   - [applymiddleware 中間件](#applymiddleware-中間件)
   - [combineReducers](#combinereducers)
+  - [react-redux](#react-redux)
+    - [實現 bindActionCreators](#實現-bindactioncreators)
+    - [實現 Provider, connect](#實現-provider-connect)
 
 # mini-redux
 
@@ -493,4 +496,230 @@ export default function combineReducers(reducers) {
     return hasChanged ? nextState : prevState;
   };
 }
+```
+
+## react-redux
+
+redux 跟 react 沒有關聯，可以獨立存在管理狀態，用 JS 寫成。因此有 react-redux 作為中間橋樑。
+不用再讓用戶手動執行組件訂閱更新。
+
+用法：直接在頂層加上 `Provider`，背後的思想是 context 跨層級傳遞數據。
+
+```tsx
+import { Provider } from "react-redux";
+import store from "./store";
+
+const root = ReactDOM.createRoot(
+  document.getElementById("root") as HTMLElement
+);
+root.render(
+  <React.StrictMode>
+    <Provider store={store}>
+      <App />
+    </Provider>
+  </React.StrictMode>
+);
+```
+
+類組件要用 HOC 的方式， 接收組件作為參數返回新的組件，使用 `connect` 包裹，連接組件與 redux，
+`connect` 接收兩個參數 `mapStateToProps` `mapDispatchToProps`：
+
+```ts
+mapStateToProps(state, [ownProps]):stateProps
+```
+
+需要注意性能： `ownProps` 是當前組件自己的 props，如果有且發生變化，`mapStateToProps` 就會被調用、重新計算！
+
+```ts
+mapDispatchToProps(dispatch: Object || Function, [ownProps]): dispatchProps
+```
+
+可省略不傳，默認情況下 `dispatch` 會注入到組件 props 內。
+可以傳物件或是函式！
+如果是物件的話，會被當成是 action creator，props 內會直接沒有 dispatch 函式可以調用。
+
+```ts
+{
+    // react-redux 會在背後幫忙加上，變成 dispatch({type: "ADD"})
+    add: (dispatch) => ({type: "ADD"}),
+}
+```
+
+```ts
+(dispatch) => {
+  const creators = {
+    // 如果是回傳函式，就要自行加上 dispatch
+    add: (dispatch) => dispatch({ type: "ADD" }),
+  };
+  // 不加的話就要調用 bindActionCreators(creators, dispatch);
+  const creators1 = bindActionCreators({
+    minus: () => ({ type: "MINUS" }),
+  });
+
+  return {
+    dispatch,
+    ...creators,
+  };
+};
+```
+
+實際使用
+
+```tsx
+import { Component } from "react";
+import { connect } from "react-redux";
+
+/**
+ * mapStateToProps 是參數，會把 state 加進去 props
+ * mapStateToProps
+ */
+export default connect(
+  // mapStateToProps,
+  ({ count }) => ({ count }),
+  mapDispatchToProps
+)(
+  class ReactReduxPage extends Component {
+    render() {
+      return (
+        <div>
+          ReactReduxPage
+          {count}
+        </div>
+      );
+    }
+  }
+);
+```
+
+### 實現 bindActionCreators
+
+> src/mini-redux/index.ts
+
+```ts
+import applyMiddleware from "./applyMiddleware";
+import createStore from "./createStore";
+import combineReducers from "./combineReducers";
+import bindActionCreators from "./bindActionCreators";
+
+export { createStore, applyMiddleware, combineReducers, bindActionCreators };
+```
+
+> src/mini-redux/bindActionCreators.ts
+
+```ts
+function bindActionCreator(action, dispatch) {
+  return (...args) => dispatch(action(...args));
+}
+
+export default function bindActionCreators(actions, dispatch) {
+  let obj = {};
+  for (const key in actions) {
+    obj[key] = bindActionCreator(actions[key], dispatch);
+  }
+  return obj;
+}
+```
+
+### 實現 Provider, connect
+
+```tsx
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useLayoutEffect,
+  useState,
+  useCallback,
+} from "react";
+import { bindActionCreators } from "../mini-redux";
+
+type Store = {
+  getState: () => any;
+  dispatch: (action: any) => void;
+  subscribe: (listener: any) => () => void;
+};
+
+const Context = createContext<Store>(null);
+
+export function Provider({
+  store,
+  children,
+}: {
+  store: Store;
+  children: ReactNode;
+}) {
+  return <Context.Provider value={store}>{children}</Context.Provider>;
+}
+
+export const connect =
+  (mapStateToProps, mapDispatchToProps) => (WrappedComponent) => (props) => {
+    const context = useContext(Context);
+    const { dispatch, getState, subscribe } = context;
+    let state = getState();
+    if (typeof mapStateToProps === "function") {
+      state = mapStateToProps(state);
+    }
+    let dispatchProps: Object = { dispatch };
+    if (typeof mapDispatchToProps === "function") {
+      dispatchProps = mapDispatchToProps(dispatch);
+    } else if (typeof mapDispatchToProps === "object") {
+      dispatchProps = bindActionCreators(mapDispatchToProps, dispatch);
+    }
+
+    const forceUpdate = useForceUpdate();
+
+    // 因為 useEffect 有延遲，如果更新發生在延遲之前，就會漏掉更新
+    // 像是 mini-antD-form 一樣（可以跳過去看
+    useLayoutEffect(() => {
+      const unsubscribe = subscribe(() => forceUpdate());
+      return () => unsubscribe();
+    }, [subscribe, forceUpdate]);
+
+    return <WrappedComponent {...props} {...state} {...dispatchProps} />;
+  };
+
+function useForceUpdate() {
+  const [, setState] = useState(0);
+
+  const update = useCallback(() => {
+    setState((prev) => prev + 1);
+  }, []);
+
+  return update;
+}
+```
+
+應用在類組件上
+
+```tsx
+import { Component, ReactNode } from "react";
+import { connect } from "../mini-react-redux";
+import { bindActionCreators } from "../mini-redux";
+
+export default connect(
+  ({ count }) => ({ count }),
+  //   (dispatch) => {
+  //     let creators: Object = {
+  //       add: () => ({ type: "ADD" }),
+  //     };
+  //     creators = bindActionCreators(creators, dispatch);
+  //     return { dispatch, ...creators };
+  //   }
+  {
+    add: () => ({ type: "ADD" }),
+  }
+)(
+  class ReactReduxPage extends Component<{ count: number; add: () => void }> {
+    render(): ReactNode {
+      const { count, add } = this.props;
+      return (
+        <div>
+          ReactReduxPage
+          {count}
+          <button onClick={add}>change</button>
+        </div>
+      );
+    }
+  }
+);
 ```

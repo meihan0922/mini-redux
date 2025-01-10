@@ -18,6 +18,7 @@ function countReducer(state = 0, action) {
 
 const store = createStore(
   combineReducers({ count: countReducer }),
-  applyMiddleware(logger2, logger, thunk)
+  // applyMiddleware(logger2, logger)
+  applyMiddleware(logger)
 );
 export default store;
