@@ -8,6 +8,11 @@
     - [實現 Provider, connect](#實現-provider-connect)
     - [hooks - useSelector, useDispatch](#hooks---useselector-usedispatch)
     - [結合 react 18: useSyncExternalStore](#結合-react-18-usesyncexternalstore)
+  - [redux-toolkit](#redux-toolkit)
+    - [基本使用](#基本使用)
+    - [實作 rtk](#實作-rtk)
+      - [configureStore](#configurestore)
+      - [createSlice](#createslice)
 
 # mini-redux
 
@@ -835,5 +840,205 @@ export function useSelector(selector) {
   let selectedState = selector(state);
 
   return selectedState;
+}
+```
+
+## redux-toolkit
+
+redux 強烈推薦使用的高效套件庫，簡化 react 對 redux 的綁定，包含配置 store，定義 reducer，不可變的更新邏輯、創建整個狀態的切片工具 `slice`，不用再編寫 action creator 或是 action type。包含了 redux thunk。
+
+副作用、修改狀態要複製再改。
+
+### 基本使用
+
+1. 創建 slice，統一管理狀態和變更邏輯
+
+   > src/store/counterReducer.ts
+
+   ```tsx
+   import { createSlice } from "@reduxjs/toolkit";
+
+   const counterSlice = createSlice({
+     name: "count",
+     initialState: { count: 0 },
+     reducers: {
+       increment: (state) => {
+         // 因為使用了 Immer.js 所以可以直接修改狀態，
+         // 實際上狀態並沒有發生改變，Immer 檢查到變化，產生一種新的不可改變的狀態
+         state.count += 1;
+       },
+     },
+   });
+
+   export const { increment } = counterSlice.actions;
+   export default counterSlice.reducer;
+   ```
+
+2. 創建 store
+
+   > src/store/rtkStore.ts
+
+   ```ts
+   import { configureStore } from "@reduxjs/toolkit";
+   import countReducer from "./counterReducer";
+
+   export default configureStore({
+     reducer: {
+       counter: countReducer,
+     },
+   });
+   ```
+
+3. 把 store 提供給 react
+
+   ```tsx
+   import React from "react";
+   import ReactDOM from "react-dom/client";
+   import App from "./App";
+   // import store from "./store";
+   import store from "./store/rtkStore";
+   import { Provider } from "./mini-react-redux";
+
+   const root = ReactDOM.createRoot(
+     document.getElementById("root") as HTMLElement
+   );
+   root.render(
+     <React.StrictMode>
+       <Provider store={store}>
+         <RTKPage />
+       </Provider>
+     </React.StrictMode>
+   );
+   ```
+
+   > src/pages/RTKPage.tsx
+
+   ```tsx
+   // import store from "../store/rtkStore";
+   import { useDispatch, useSelector } from "../mini-react-redux";
+   import { increment } from "../store/counterReducer";
+
+   export default function RTKPage(props) {
+     //   const count = store.getState().counter.count;
+     // const dispatch = store.dispatch
+     const count = useSelector(({ counter: { count } }) => count);
+     const dispatch = useDispatch();
+
+     return (
+       <div>
+         RTKStore
+         {count}
+         <button onClick={() => dispatch(increment())}>change</button>
+       </div>
+     );
+   }
+   ```
+
+### 實作 rtk
+
+#### configureStore
+
+很簡單，就只是連結 redux 而已
+
+```ts
+import { createStore } from "../mini-redux";
+
+export function configureStore({ reducer }) {
+  const rootReducers = combineReducers(reducer);
+  const store = createStore(rootReducers);
+  return store;
+}
+```
+
+#### createSlice
+
+也很簡單，要輸出 actions 和 reducers
+
+```ts
+// 未轉換前
+{
+  name: "count",
+  initialState: { count: 0 },
+  reducers: {
+    increment: (state, payload) => {
+      state.count += 1;
+    },
+  },
+}
+// 轉換後的 actions
+{
+  increment: (...args)=>{
+    type: "increment", // name 對應的部分
+    payload: args[0]
+  }
+}
+// 轉換後的 reducers，一樣接收 state 和 action 作為參數
+(state, action)=>{
+    // 應該會有一個儲存 action 的物件
+    const someActionMap = {}
+    // 找到對應的 reducer
+    const reducer = someActionMap[action];
+    // 用 immer 更新狀態
+    // ...
+    // 返回新的狀態
+    return newState;
+}
+```
+
+> src/mini-redux-toolkit/index.ts
+
+```ts
+import createReducer from "./createReducer";
+import { createStore, combineReducers } from "../mini-redux";
+
+export function createSlice(options) {
+  const { name, initialState, reducers = {} } = options;
+  const reducersName = Object.keys(reducers);
+  const actionCreators = {} as { [key in string]: any };
+  // {[key]: reducer} 的結構
+  const sliceCaseReducersByType = {};
+
+  reducersName.forEach((reducerName) => {
+    const type = `${name}/${reducerName}`;
+    actionCreators[reducerName] = (...args) => ({
+      type, // 對應到 reducer
+      payload: args[0],
+    });
+    // {[key]: reducer} 的結構
+    sliceCaseReducersByType[type] = reducers[reducerName];
+  });
+
+  let _reducer;
+
+  return {
+    reducer: (state, action) => {
+      if (!_reducer)
+        _reducer = createReducer(initialState, sliceCaseReducersByType);
+      return _reducer(state, action);
+    },
+    actions: actionCreators,
+  };
+}
+```
+
+> src/mini-redux-toolkit/createReducer.ts
+
+```ts
+import createNextState from "immer";
+// 返回一個 reducer
+export default function createReducer(initialState, actionsMap) {
+  function reducer(state = initialState, action) {
+    const caseReducers = [actionsMap[action.type]];
+
+    return caseReducers.reduce((acc, cur) => {
+      if (cur) {
+        return createNextState(acc, (draft) => {
+          return cur(draft, action);
+        });
+      }
+      return acc;
+    }, state);
+  }
+  return reducer;
 }
 ```

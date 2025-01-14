@@ -1,4 +1,4 @@
-export default function createStore(reducer, enhancer) {
+export default function createStore(reducer, enhancer?) {
   if (enhancer) {
     return enhancer(createStore)(reducer);
   }

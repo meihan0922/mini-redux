@@ -1,11 +1,12 @@
 import Test from "./pages/Test";
 import ReactReduxPage from "./pages/ReactReduxPage";
 import ReactReduxHookPage from "./pages/ReactReduxHookPage";
+import RTKPage from "./pages/RTKPage";
 
 function App() {
   return (
     <div className="App">
-      <ReactReduxHookPage value={123} />
+      <RTKPage />
     </div>
   );
 }
