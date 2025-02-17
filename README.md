@@ -13,6 +13,9 @@
     - [實作 rtk](#實作-rtk)
       - [configureStore](#configurestore)
       - [createSlice](#createslice)
+    - [非同步解決方案](#非同步解決方案)
+      - [redux-thunk](#redux-thunk)
+      - [redux-saga](#redux-saga)
 
 # mini-redux
 
@@ -1044,3 +1047,218 @@ export default function createReducer(initialState, actionsMap) {
   return reducer;
 }
 ```
+
+### 非同步解決方案
+
+#### redux-thunk
+
+redux-thunk
+缺點：容易陷入嵌套地獄，僅適合簡單的異步
+
+比方加入路由權限頁面
+
+```tsx
+// > src/App.tsx
+function App() {
+  return (
+    <div className="App">
+      <Router>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Home />} />
+            <Route
+              path="user"
+              element={
+                <RequiredAuth>
+                  <UserPage />
+                </RequiredAuth>
+              }
+            />
+            <Route path="login" element={<LoginPage />} />
+            <Route path="*" element={<NoMatch />} />
+          </Route>
+        </Routes>
+      </Router>
+    </div>
+  );
+}
+```
+
+因為 tool-kit 內包含了 thunk 不用再另外寫 `applymiddleware`
+
+```ts
+// 定義型別
+// > src/hooks.ts
+import { useDispatch, useSelector } from "react-redux";
+import type { AppDispatch } from "./store";
+import { RootState } from "./store/loginReducer";
+
+// Use throughout your app instead of plain `useDispatch` and `useSelector`
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>();
+export const useAppSelector = useSelector.withTypes<{ user: RootState }>();
+```
+
+```ts
+// 定義 reducer
+// > src/store/loginReducer.ts
+const userInit = {
+  isLogin: false,
+  userInfo: { id: null, username: "", score: 0 },
+  loading: false,
+  err: { msg: "" },
+};
+export type RootState = typeof userInit;
+export const REQUEST = "REQUEST";
+export const ADD = "ADD";
+export const MINUS = "MINUS";
+export const LOGIN_SUCCESS = "LOGIN_SUCCESS";
+export const LOGIN_FAILURE = "LOGIN_FAILURE";
+export const LOGOUT_SUCCESS = "LOGOUT_SUCCESS";
+export const LOGOUT_SAGA = "LOGOUT_SAGA";
+
+export const loginReducer: (
+  state: RootState,
+  action: { type: string; payload: any }
+) => typeof userInit = (state = { ...userInit }, { type, payload }) => {
+  switch (type) {
+    case REQUEST:
+      return { ...state, loading: true };
+    case LOGIN_SUCCESS:
+      return {
+        ...state,
+        isLogin: true,
+        loading: false,
+        userInfo: { ...payload },
+      };
+    case LOGIN_FAILURE:
+      return { ...state, ...userInit, ...payload };
+    case LOGOUT_SUCCESS:
+      return { ...userInit, isLogin: false, loading: false };
+    default:
+      return state;
+  }
+};
+
+// > src/store/index.ts
+import { loginReducer } from "./loginReducer";
+import { configureStore } from "@reduxjs/toolkit";
+
+const store = configureStore({
+  reducer: { user: loginReducer },
+});
+export default store;
+export type AppDispatch = typeof store.dispatch;
+
+// > src/service/login.ts
+const LoginService = {
+  login(userInfo) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (userInfo.username === "小明") {
+          resolve({ id: 123, username: "小明" });
+        } else {
+          reject({ err: { msg: "用戶或密碼錯誤" } });
+        }
+      }, 1000);
+    });
+  },
+  getMoreUserInfo(userInfo) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (userInfo.id === 123) {
+          resolve({ ...userInfo, score: "100" });
+        } else {
+          reject({ err: { msg: "獲取詳情錯誤" } });
+        }
+      }, 1000);
+    });
+  },
+};
+
+export default LoginService;
+
+// > src/action/user.ts
+import LoginService from "src/service/login";
+import {
+  LOGIN_FAILURE,
+  LOGIN_SUCCESS,
+  LOGOUT_SUCCESS,
+  REQUEST,
+} from "../store/loginReducer";
+
+export const getMoreUserInfo = (dispatch, userInfo) => {
+  LoginService.getMoreUserInfo(userInfo).then(
+    (res) => {
+      dispatch({ type: LOGIN_SUCCESS, payload: res });
+    },
+    (err) => {
+      dispatch({ type: LOGIN_FAILURE, payload: err });
+    }
+  );
+};
+
+export const login = (payload: any) => (dispatch) => {
+  dispatch({ type: REQUEST });
+  // 確保前後關係，但需要層層嵌套
+  LoginService.login(payload).then(
+    (res) => {
+      getMoreUserInfo(dispatch, res);
+    },
+    (err) => {
+      dispatch({ type: LOGIN_FAILURE, payload: err });
+    }
+  );
+};
+
+export const logout = () => ({ type: LOGOUT_SUCCESS });
+```
+
+ui 綁定
+
+```tsx
+// > src/pages/LoginPage.tsx
+export default function LoginPage() {
+  const dispatch = useAppDispatch();
+  const user = useAppSelector(({ user }) => user);
+  const location = useLocation();
+  const from = location.state?.from?.pathname || "/";
+
+  const submit = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const username = formData.get("username");
+    dispatch(login({ username }));
+  };
+
+  if (user.isLogin) {
+    return <Navigate to={from} replace />;
+  }
+
+  return (
+    <div>
+      <h1>LoginPage</h1>
+      <form onSubmit={submit}>
+        <input type="text" name="username" />
+        <button type="submit">{user.loading ? "loading..." : "login"}</button>
+      </form>
+      <p>{user.err.msg}</p>
+    </div>
+  );
+}
+// > src/auth/RequiredAuth.tsx
+import { useSelector } from "react-redux";
+import { Navigate, useLocation } from "react-router-dom";
+
+export default function RequiredAuth({ children }) {
+  const user = useSelector(({ user }) => user);
+  const location = useLocation();
+
+  if (user.isLogin) {
+    return children;
+  }
+
+  return <Navigate to="/login" state={{ from: location }} replace />;
+}
+```
+
+#### redux-saga

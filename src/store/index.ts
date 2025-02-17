@@ -1,24 +1,12 @@
-// import { createStore, applyMiddleware } from "redux";
-// import { thunk } from "redux-thunk";
-// import logger from "redux-logger";
+import { applyMiddleware, combineReducers } from "redux";
 import { logger, logger2 } from "./logger";
-import { createStore, applyMiddleware, combineReducers } from "../mini-redux";
-import thunk from "./thunk";
+// import { createStore, applyMiddleware, combineReducers } from "@mini/redux";
+// import thunk from "./thunk";
+import { loginReducer } from "./loginReducer";
+import { configureStore } from "@reduxjs/toolkit";
 
-function countReducer(state = 0, action) {
-  switch (action?.type) {
-    case "ADD":
-      return state + 1;
-    case "MINUS":
-      return state - 1;
-    default:
-      return state;
-  }
-}
-
-const store = createStore(
-  combineReducers({ count: countReducer }),
-  // applyMiddleware(logger2, logger)
-  applyMiddleware(logger)
-);
+const store = configureStore({
+  reducer: { user: loginReducer },
+});
 export default store;
+export type AppDispatch = typeof store.dispatch;
