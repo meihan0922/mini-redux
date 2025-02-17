@@ -233,7 +233,7 @@ const store = createStore(countReducer, applyMiddleware(thunk, logger));
     }
 
     return function (...args) {
-      const result = funArgs.reduce((acc, cur) => {
+      return funArgs.reduce((acc, cur) => {
         return cur(acc);
       }, ...args);
     };
@@ -362,6 +362,8 @@ export default function applyMiddleware(...middlewares) {
       dispatch: (action, ...args) => dispatch(action, ...args),
     };
     const chain = middlewares.map((middleware) => middleware(midAPI));
+    // 執行完成後，每個中間件剩下這樣
+    // (next) => (action) => {...}
 
     // 再把 store.dispatch 作為參數傳入
     dispatch = compose(...chain)(store.dispatch);
@@ -407,13 +409,13 @@ dispatch = (...args) => logger2(logger(store.dispatch))(...args);
 
 ```ts
 // 從這樣
-const logger = (store) => (next) => (action) => {
+(next) => (action) => {
   console.log("logger1 dispatch", action);
   const result = next(action);
   console.log("logger1 next state", store.getState());
   return result;
 };
-// 變成這樣，傳入 logger2 作為參數 next 傳入
+// 變成這樣，作為 logger2 參數 next 傳入
 (action) => {
   console.log("logger1 dispatch", action);
   const result = next(action);

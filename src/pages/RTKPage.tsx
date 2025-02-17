@@ -1,5 +1,6 @@
 // import store from "../store/rtkStore";
-import { useDispatch, useSelector } from "../mini-react-redux";
+// import { useDispatch, useSelector } from "@mini/react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { increment } from "../store/counterReducer";
 
 export default function RTKPage(props) {

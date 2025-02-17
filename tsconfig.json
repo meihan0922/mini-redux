@@ -3,8 +3,17 @@
     "target": "esnext",
     "module": "commonjs",
     "jsx": "react-jsx",
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "baseUrl": "./",
+    "paths": {
+      "@mini/*": ["mini/*"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*",
+    "mini/react-redux",
+    "mini/redux",
+    "mini/redux-toolkit"
+  ],
   "exclude": ["**/*.spec.ts"]
 }

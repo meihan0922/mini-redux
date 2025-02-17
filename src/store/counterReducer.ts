@@ -1,5 +1,5 @@
 // import { createSlice } from "@reduxjs/toolkit";
-import { createSlice } from "../mini-redux-toolkit/index";
+import { createSlice } from "@mini/redux-toolkit/index";
 
 const counterSlice = createSlice({
   name: "count",

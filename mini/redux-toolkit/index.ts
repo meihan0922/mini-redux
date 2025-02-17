@@ -1,5 +1,5 @@
 // import { createReducer } from "@reduxjs/toolkit";
-import { createStore, combineReducers } from "../mini-redux";
+import { createStore, combineReducers } from "../redux";
 import createReducer from "./createReducer";
 
 export function configureStore({ reducer }) {

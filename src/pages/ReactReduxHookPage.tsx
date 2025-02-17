@@ -1,6 +1,6 @@
 import { useCallback } from "react";
-// import { useDispatch, useSelector } from "react-redux";
-import { useDispatch, useSelector } from "../mini-react-redux";
+import { useDispatch, useSelector } from "react-redux";
+// import { useDispatch, useSelector } from "@mini/react-redux";
 
 export default function ReactReduxHookPage({ value }) {
   const dispatch = useDispatch();

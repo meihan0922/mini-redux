@@ -12,7 +12,7 @@ const Test = () => {
 
   return (
     <div>
-      state: {store.getState().count}
+      {/* state: {store.getState().count} */}
       <button
         onClick={() => {
           store.dispatch({ type: "ADD" });

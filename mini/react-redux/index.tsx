@@ -7,7 +7,7 @@ import {
   useCallback,
   useSyncExternalStore,
 } from "react";
-import { bindActionCreators } from "../mini-redux";
+import { bindActionCreators } from "../redux";
 
 type Store = {
   getState: () => any;

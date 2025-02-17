@@ -1,6 +1,6 @@
 import { Component, ReactNode } from "react";
-import { connect } from "../mini-react-redux";
-import { bindActionCreators } from "../mini-redux";
+import { connect } from "@mini/react-redux";
+import { bindActionCreators } from "@mini/redux";
 
 export default connect(
   ({ count }) => ({ count }),
