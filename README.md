@@ -16,6 +16,7 @@
     - [非同步解決方案](#非同步解決方案)
       - [redux-thunk](#redux-thunk)
       - [redux-saga](#redux-saga)
+        - [啟動](#啟動)
 
 # mini-redux
 
@@ -1262,3 +1263,97 @@ export default function RequiredAuth({ children }) {
 ```
 
 #### redux-saga
+
+不同於 thunk，不會再遇到回調地獄，saga 結合 generator ，很容易的測試異步流程保持 action 乾淨。他會 yield 對象到 saga middleware。轉門處理複雜的異步，也便於測試。
+
+我們都知道 redux 中用來處理狀態變化的函式是純函式，也就是一個輸入對應到一個輸出。沒辦法處理非同步請求。
+使用 saga，意味著邏輯會存在在兩個地方：
+
+1. reducers 負責處理 action 的狀態更新
+2. saga 負責協調複雜的非同步操作
+
+- 基本概念：
+
+  - 生成器：saga 是建立在 generator 之上
+  - effetcs：所有任務都通過 `yield effect` 傳遞給 sagaMiddleware 完成，每個 effect 都是基本的任務單元，是一個 JS 對象，包含了要被 saga 執行的資訊。
+  - 架構：
+    - 包含了 root saga，啟動的入口;
+    - 監聽的 saga，負責監聽 actions 呼叫 worker 執行;
+    - 剩下的就是執行任務的部分，包含了非同步請求等等
+    - channel：囊括了 effects 與外部事件元或是 sagas 之間的通信。
+
+- 常見的 API
+
+  - 輔助函數：
+    - `takeEvery`：就像流水線的搬運工，過來一個貨物就直接執行後面的函數，一旦調用，他就會一直執行這個工作，絕對不會停止對於貨物的監聽過程和觸發搬運貨物的函數。可以讓多個 saga 任務並行被 `fork` 執行，
+    - `takeLatest`：只允許執行一個 fetchData 任務，而這個任務是最後被啟動的那個，如果之前已經有一個任務在執行，那麼執行當前任務之前會把之前執行的任務自動取消。
+  - effect creators：
+
+    - `take(pattern)`：可以理解為監聽未來的 action，等待一個特定的 action，才會繼續執行下面的語句。
+
+      ```ts
+      // 監聽
+      export function* loginSaga() {
+        // yield takeEvery(LOGOUT_SAGA, loginHandler);
+        // 與下面相等
+        while (true) {
+          const action = yield take(LOGOUT_SAGA);
+          yield call(loginHandler, action);
+          // 使用 call 下面就阻塞了，除非改用 fork
+          console.log(
+            "%csrc/action/loginSaga.ts:30 action",
+            "color: #26bfa5;",
+            action
+          );
+        }
+      }
+      ```
+
+    - `put(action)`：可以簡單地把它理解為 redux 框架中的 dispatch 函數，當 `put` 一個 action 後，reducer 中就會計算新的 state 並傳回，‼️ 注意：是阻塞 effect。
+    - `call(fn, ...args)`：可以把它簡單的理解為可以呼叫其他函數的函數，‼️ 注意：是阻塞 effect。
+
+      ```ts
+      function* loginHandler(action) {
+        yield put({ type: REQUEST });
+        try {
+          // 異步操作 call
+          // 狀態更新 put(dispatch)
+          // 做監聽 take
+          const res1 = yield call(LoginService.login, action.payload);
+          const res2 = yield call(LoginService.getMoreUserInfo, res1);
+          yield put({ type: LOGIN_SUCCESS, payload: res2 });
+        } catch (err) {
+          yield put({ type: LOGIN_FAILURE, payload: err });
+        }
+      }
+      ```
+
+    - `fork(fn, ...args)`：fork 函數和 call 函數很像，都是用來呼叫其他函數的，‼️ 但是 fork 函數是『非阻塞函數』。也就是說，程式執行完 `yield fork(fn, ...args)` 之後，會立即執行下一行語句。
+    - `select(selector, ...args)`：`store.getState()`。
+
+##### 啟動
+
+```ts
+import { loginReducer } from "./loginReducer";
+import { configureStore } from "@reduxjs/toolkit";
+import createSagaMiddleware from "redux-saga";
+// 1. 創建要運行的 saga
+import { loginSaga } from "src/action/loginSaga";
+
+// create the saga middleware
+// 2. 創建 saga 中間件，需要先跑 generator
+const sagaMiddleware = createSagaMiddleware();
+
+const store = configureStore({
+  reducer: { user: loginReducer },
+  // 3. 把 saga 中間件與 redux store 連接
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(sagaMiddleware),
+});
+// then run the saga
+// 4. 運行 saga
+sagaMiddleware.run(loginSaga);
+
+export default store;
+export type AppDispatch = typeof store.dispatch;
+```
