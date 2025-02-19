@@ -4,16 +4,17 @@
     "module": "commonjs",
     "jsx": "react-jsx",
     "esModuleInterop": true,
-    "baseUrl": "./",
+    "baseUrl": ".",
     "paths": {
-      "@mini/*": ["mini/*"]
+      "@mini/*": ["src/mini/*"]
     }
   },
   "include": [
     "src/**/*",
-    "mini/react-redux",
-    "mini/redux",
-    "mini/redux-toolkit"
+    "src/mini/react-redux",
+    "src/mini/redux",
+    "src/mini/redux-toolkit",
+    "src/mini/saga"
   ],
   "exclude": ["**/*.spec.ts"]
 }

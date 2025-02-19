@@ -5,7 +5,8 @@ import {
   LOGOUT_SAGA,
   REQUEST,
 } from "src/store/loginReducer";
-import { put, call, takeEvery, take } from "redux-saga/effects";
+// import { put, call, takeEvery, take } from "redux-saga/effects";
+import { put, call, take, fork } from "@mini/saga/effects";
 
 function* loginHandler(action) {
   yield put({ type: REQUEST });
@@ -27,12 +28,7 @@ export function* loginSaga() {
   // 與下面相等
   while (true) {
     const action = yield take(LOGOUT_SAGA);
-    yield call(loginHandler, action);
     // 使用 call 下面就阻塞了，除非改用 fork
-    console.log(
-      "%csrc/action/loginSaga.ts:30 action",
-      "color: #26bfa5;",
-      action
-    );
+    yield fork(loginHandler, action);
   }
 }
