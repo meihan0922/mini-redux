@@ -17,6 +17,8 @@
       - [redux-thunk](#redux-thunk)
       - [redux-saga](#redux-saga)
         - [啟動](#啟動)
+        - [實作](#實作)
+          - [effects](#effects)
 
 # mini-redux
 
@@ -1292,19 +1294,16 @@ export default function RequiredAuth({ children }) {
     - `take(pattern)`：可以理解為監聽未來的 action，等待一個特定的 action，才會繼續執行下面的語句。
 
       ```ts
-      // 監聽
-      export function* loginSaga() {
-        // yield takeEvery(LOGOUT_SAGA, loginHandler);
-        // 與下面相等
+      function* loginFlow() {
         while (true) {
-          const action = yield take(LOGOUT_SAGA);
-          yield call(loginHandler, action);
-          // 使用 call 下面就阻塞了，除非改用 fork
-          console.log(
-            "%csrc/action/loginSaga.ts:30 action",
-            "color: #26bfa5;",
-            action
-          );
+          const { user, password } = yield take("LOGIN_REQUEST"); // 1️⃣ 等待 LOGIN_REQUEST
+          const token = yield call(authorize, user, password); // 2️⃣ 認證邏輯
+
+          if (token) {
+            yield call(Api.storeItem, { token }); // 3️⃣ 認證成功 -> 保存 token
+            yield take("LOGOUT"); // 4️⃣ 等待 LOGOUT action
+            yield call(Api.clearItem, "token"); // 5️⃣ 清除 token
+          }
         }
       }
       ```
@@ -1356,4 +1355,205 @@ sagaMiddleware.run(loginSaga);
 
 export default store;
 export type AppDispatch = typeof store.dispatch;
+
+// > src/action/loginSaga.ts
+function* loginHandler(action) {
+  console.log("?????loginHandler", action);
+  yield put({ type: REQUEST });
+  try {
+    // 異步操作 call
+    // 狀態更新 put(dispatch)
+    // 做監聽 take
+    const res1 = yield call(LoginService.login, action.payload);
+    console.log("%csrc/action/loginSaga.ts:19 res1", "color: #26bfa5;", res1);
+    const res2 = yield call(LoginService.getMoreUserInfo, res1);
+    console.log("%csrc/action/loginSaga.ts:19 res2", "color: #26bfa5;", res2);
+    yield put({ type: LOGIN_SUCCESS, payload: res2 });
+  } catch (err) {
+    yield put({ type: LOGIN_FAILURE, payload: err });
+  }
+}
+
+// 監聽
+export function* loginSaga() {
+  // yield takeEvery(LOGOUT_SAGA, loginHandler);
+  // 與下面相等
+  while (true) {
+    // 初始化後，會讓流程暫停在這裡，直到下次被呼叫
+    const action = yield take(LOGOUT_SAGA);
+    // 使用 call 下面就阻塞了，除非改用 fork
+    yield fork(loginHandler, action);
+    console.log(
+      "%csrc/action/loginSaga.ts:30 action",
+      "color: #26bfa5;",
+      action
+    );
+  }
+}
+```
+
+##### 實作
+
+先寫常數 symbol
+
+```ts
+const createSymbol = (name) => `@@redux-saga/${name}`;
+
+export const CANCEL = createSymbol("CANCEL_PROMISE");
+export const CHANNEL_END_TYPE = createSymbol("CHANNEL_END");
+export const IO = createSymbol("IO");
+export const MATCH = createSymbol("MATCH");
+export const MULTICAST = createSymbol("MULTICAST");
+export const SAGA_ACTION = createSymbol("SAGA_ACTION");
+export const SELF_CANCELLATION = createSymbol("SELF_CANCELLATION");
+export const TASK = createSymbol("TASK");
+export const TASK_CANCEL = createSymbol("TASK_CANCEL");
+export const TERMINATE = createSymbol("TERMINATE");
+
+export const SAGA_LOCATION = createSymbol("LOCATION");
+```
+
+###### effects
+
+`take` `call` `put` `fork` 都是回傳 effect 的物件
+
+```ts
+import { IO } from "./symbol";
+
+const effectTypes = {
+  TAKE: "TAKE",
+  PUT: "PUT",
+  ALL: "ALL",
+  RACE: "RACE",
+  CALL: "CALL",
+  CPS: "CPS",
+  FORK: "FORK",
+  JOIN: "JOIN",
+  CANCEL: "CANCEL",
+  SELECT: "SELECT",
+  ACTION_CHANNEL: "ACTION_CHANNEL",
+  CANCELLED: "CANCELLED",
+  FLUSH: "FLUSH",
+  GET_CONTEXT: "GET_CONTEXT",
+  SET_CONTEXT: "SET_CONTEXT",
+} as const;
+
+function makeEffect(type: keyof typeof effectTypes, payload) {
+  return {
+    type,
+    payload,
+    [IO]: IO,
+  };
+}
+
+export function take(pattern) {
+  return makeEffect(effectTypes.TAKE, { pattern });
+}
+export function put(action) {
+  return makeEffect(effectTypes.PUT, { action });
+}
+export function call(fn, ...args) {
+  return makeEffect(effectTypes.CALL, { fn, args });
+}
+export function fork(fn, ...args) {
+  return makeEffect(effectTypes.FORK, { fn, args });
+}
+```
+
+觸發生成器後，回傳的物件，type 再去對照方法執行。
+有趣的是，`take` 在執行該流程後會停住，不會再往後跑，所以需要記住這個生成器當下 next 的方法。相對於其他方法，會需要執行原先的生成器，直到完成為止。
+
+❓ 產生的問題是要如何記住生成器當下的 next?
+源碼中製作了 channel 保存
+
+> src/mini/saga/channel.ts
+
+```ts
+import { MATCH } from "./symbol";
+
+export function stdChannel() {
+  const currentTakers = [];
+  // matcher 為一個函式：表示是否對應相同的key，方便 put 條件句判斷
+  // cb 是 next 函式
+  function take(cb, matcher) {
+    cb[MATCH] = matcher;
+    currentTakers.push(cb);
+  }
+
+  function put(action) {
+    const takers = currentTakers;
+    // takers.length 是動態的，要先取好，避免陷入無限循環
+    for (let i = 0, len = takers.length; i < len; i++) {
+      const taker = takers[i];
+      if (taker[MATCH](action)) {
+        console.log("put 執行，take 原停住的流程所在的地方 下一個 next");
+        taker(action);
+      }
+    }
+  }
+
+  return { take, put };
+}
+```
+
+對應到方法
+
+```ts
+const func = (f) => typeof f === "function";
+const promise = (p) => p && func(p.then); // 直接看有沒有 then
+
+// env: store;
+// pattern: ex- LOGIN_SUCCESS
+// cb: next 方法
+// const action = yield take(LOGOUT_SAGA);
+function runTakeEffect(env, { channel = env.channel, pattern }, cb) {
+  console.log("Take", pattern);
+  const matcher = (input) => input.type === pattern;
+  channel.take(cb, matcher);
+}
+// env: store;
+// pattern: ex- LOGIN_SUCCESS
+// cb: next 方法
+// yield put({ type: LOGIN_SUCCESS, payload: res2 });
+function runPutEffect(env, { action }, cb) {
+  console.log("Put");
+  const { dispatch } = env;
+  const result = dispatch(action);
+  cb(result);
+}
+// 只實現 Promise 的部分，沒有處理其他狀況
+// env: store;
+// fn: 未來要執行的函式
+// args: fn 要執行的參數
+// cb: next 方法
+// const res1 = yield call(LoginService.login, action.payload);
+function runCallEffect(env, { fn, args }, cb) {
+  const result = fn.apply(null, args);
+  console.log("Call", result, promise(result));
+  if (promise(result)) {
+    result.then((res) => cb(res)).catch((err) => cb(err, true));
+    return;
+  }
+  cb(result);
+}
+// 只實現 generator 的部分，沒有處理到 Promise
+// env: store;
+// fn: 未來要執行的函式
+// args: fn 要執行的參數
+// cb: next 方法
+// yield fork(loginHandler, action);
+function runForkEffect(env, { fn, args }, cb) {
+  console.log("Fork");
+  const taskIterator = fn.apply(null, args);
+  process(env, taskIterator); // 處理自身的生成器
+  cb(); // 執行原先的 生成器
+}
+
+const effectRunnerMap = {
+  [effectTypes.TAKE]: runTakeEffect,
+  [effectTypes.CALL]: runCallEffect,
+  [effectTypes.PUT]: runPutEffect,
+  [effectTypes.FORK]: runForkEffect,
+};
+```
 ```
