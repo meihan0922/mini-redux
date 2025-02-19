@@ -19,6 +19,8 @@
         - [啟動](#啟動)
         - [實作](#實作)
           - [effects](#effects)
+          - [createSagaMiddleware](#createsagamiddleware)
+          - [runSaga](#runsaga)
 
 # mini-redux
 
@@ -1556,4 +1558,94 @@ const effectRunnerMap = {
   [effectTypes.FORK]: runForkEffect,
 };
 ```
+
+###### createSagaMiddleware
+
+```ts
+const sagaMiddleware = createSagaMiddleware();
+
+const store = configureStore({
+  reducer: { user: loginReducer },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(sagaMiddleware),
+});
+sagaMiddleware.run(loginSaga);
+```
+
+1. 要初始化 channel
+2. 要像其他 middleware 一樣，回傳 `(next) => (action) => {return next(action);}`
+3. 帶有 run 方法，先執行一次生成器
+
+```ts
+export default function createSagaMiddleware() {
+  let boundRunSaga;
+  let channel = stdChannel(); // 源碼中允許用戶自定義
+
+  function sagaMiddleware({ getState, dispatch }) {
+    // 1. 預先傳入第一個參數
+    boundRunSaga = runSaga.bind(null, { channel, getState, dispatch });
+
+    return (next) => (action) => {
+      let result = next(action);
+      console.log("createSagaMiddleware", action, result);
+      // 執行監聽的 take 任務
+      channel.put(action);
+      return result;
+    };
+  }
+  // 2. 接收 generator，執行 generator
+  sagaMiddleware.run = (...args) => {
+    return boundRunSaga(...args);
+  };
+
+  return sagaMiddleware;
+}
+```
+
+###### runSaga
+
+要連結 effects，把生成器的 `next` 交給 effect。
+
+```ts
+function runSaga({ getState, dispatch, channel }, saga, ...args) {
+  const iterator = saga(...args);
+  process({ getState, dispatch, channel }, iterator);
+}
+
+function process(env, iterator) {
+  function next(arg?, isErr?) {
+    let result;
+    if (isErr) {
+      result = iterator.throw(arg);
+    } else {
+      result = iterator.next(arg);
+    }
+    if (!result.done) {
+      const effect = result.value;
+      digestEffect(effect, next);
+    }
+  }
+  function digestEffect(effect, next) {
+    let effectSettled;
+    // 避免重複執行
+    function currentCb(res, isErr) {
+      if (effectSettled) return;
+      effectSettled = true;
+      next(res, isErr);
+    }
+    runEffect(effect, currentCb);
+  }
+
+  function runEffect(effect, currentCb) {
+    // 如果標記的 effect 存在就執行
+    if (effect && effect[IO]) {
+      const effectRunner = effectRunnerMap[effect.type];
+      effectRunner(env, effect.payload, currentCb);
+    } else {
+      currentCb();
+    }
+  }
+
+  next();
+}
 ```

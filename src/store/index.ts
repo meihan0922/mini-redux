@@ -4,7 +4,8 @@ import { logger, logger2 } from "./logger";
 // import thunk from "./thunk";
 import { loginReducer } from "./loginReducer";
 import { configureStore } from "@reduxjs/toolkit";
-import createSagaMiddleware from "redux-saga";
+// import createSagaMiddleware from "redux-saga";
+import createSagaMiddleware from "@mini/saga";
 import { loginSaga } from "src/action/loginSaga";
 
 // create the saga middleware
