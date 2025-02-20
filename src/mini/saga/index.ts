@@ -52,11 +52,19 @@ function runForkEffect(env, { fn, args }, cb) {
   cb(); // 執行原先的 生成器
 }
 
+function runAllEffect(env, { effects }, cb) {
+  let n = effects.length;
+  for (let i = 0; i < n; i++) {
+    process(env, effects[i]);
+  }
+}
+
 const effectRunnerMap = {
   [effectTypes.TAKE]: runTakeEffect,
   [effectTypes.CALL]: runCallEffect,
   [effectTypes.PUT]: runPutEffect,
   [effectTypes.FORK]: runForkEffect,
+  [effectTypes.ALL]: runAllEffect,
 };
 
 export default function createSagaMiddleware() {

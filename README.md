@@ -21,6 +21,7 @@
           - [effects](#effects)
           - [createSagaMiddleware](#createsagamiddleware)
           - [runSaga](#runsaga)
+          - [effect all](#effect-all)
 
 # mini-redux
 
@@ -1628,6 +1629,7 @@ function process(env, iterator) {
   function digestEffect(effect, next) {
     let effectSettled;
     // 避免重複執行
+    // 一個 effect 完成後，不管是成功還是失敗，只會執行一次回調。
     function currentCb(res, isErr) {
       if (effectSettled) return;
       effectSettled = true;
@@ -1648,4 +1650,56 @@ function process(env, iterator) {
 
   next();
 }
+```
+
+> 💡 `digestEffect` 避免重複執行？
+> 一個 effect 的回調如果被觸發了兩次，會出問題
+
+```ts
+// 拿 call effect 舉例
+function runCallEffect(env, { fn, args }, cb) {
+  const result = fn.apply(null, args);
+  if (promise(result)) {
+    result.then((res) => cb(res)).catch((err) => cb(err, true));
+  } else {
+    cb(result);
+  }
+}
+
+// 其實是為了模擬一種「可能的異常狀況」：
+// 理論上，一個 Promise 只會 resolve 或 reject 一次，但這裡故意寫了兩次
+// 你可以把它想像成某個Promise-like 的接口，它不是標準的 Promise，或是某個自己包的庫有 bug。
+const fakeApi = () =>
+  new Promise((resolve, reject) => {
+    setTimeout(() => resolve("第一次 resolve"), 1000);
+    setTimeout(() => resolve("第二次 resolve"), 1500); // 調用者 bug
+  });
+// 1秒後，調用 cb
+// 1.5秒後，又調用 cb
+```
+
+###### effect all
+
+> src/mini/saga/effects.ts
+
+```ts
+export function all(effects) {
+  return makeEffect(effectTypes.ALL, { effects });
+}
+```
+
+> src/mini/saga/index.ts
+
+```ts
+function runAllEffect(env, { effects }, cb) {
+  let n = effects.length;
+  for (let i = 0; i < n; i++) {
+    process(env, effects[i]);
+  }
+}
+
+const effectRunnerMap = {
+  // ... 省略
+  [effectTypes.ALL]: runAllEffect,
+};
 ```
